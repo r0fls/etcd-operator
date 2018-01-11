@@ -39,22 +39,30 @@ type S3Client struct {
 }
 
 // NewClientFromSecret returns a S3 client based on given k8s secret containing aws credentials.
-func NewClientFromSecret(kubecli kubernetes.Interface, namespace, awsSecret string) (w *S3Client, err error) {
+func NewClientFromSecret(kubecli kubernetes.Interface, namespace, ...awsSecret string) (w *S3Client, err error) {
+	print(awsSecret)
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("new S3 client failed: %v", err)
 		}
 	}()
-	w = &S3Client{}
-	w.configDir, err = ioutil.TempDir(tmpdir, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create aws config dir: (%v)", err)
+	var sess *session.Session
+	// If there is no secret name supplied, use the default session configuration, which will work with an iam role
+	if len(awsSecret) != 0 && awsSecret[0] != "" {
+		secret := awsSecret[0]
+		w = &S3Client{}
+		w.configDir, err = ioutil.TempDir(tmpdir, "")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create aws config dir: (%v)", err)
+		}
+		so, err := setupAWSConfig(kubecli, namespace, secret, w.configDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to setup aws config: (%v)", err)
+		}
+		sess, err = session.NewSessionWithOptions(*so)
+	} else {
+		sess, err = session.New()
 	}
-	so, err := setupAWSConfig(kubecli, namespace, awsSecret, w.configDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to setup aws config: (%v)", err)
-	}
-	sess, err := session.NewSessionWithOptions(*so)
 	if err != nil {
 		return nil, fmt.Errorf("new AWS session failed: %v", err)
 	}
